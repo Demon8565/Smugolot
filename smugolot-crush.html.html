@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Smugolot Crush — $SMG Game</title>
+<meta name="description" content="Join Smuglantis. Stack memecoins, level up, and unlock $SMG holder rewards." />
+<style>
+  html, body { margin: 0; padding: 0; background: #06010f; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script>
+  window.storage = {
+    async get(key, shared) {
+      const fullKey = (shared ? "smg-shared:" : "smg-local:") + key;
+      const raw = localStorage.getItem(fullKey);
+      if (raw === null) throw new Error("Key not found: " + key);
+      return { key, value: raw, shared: !!shared };
+    },
+    async set(key, value, shared) {
+      const fullKey = (shared ? "smg-shared:" : "smg-local:") + key;
+      localStorage.setItem(fullKey, value);
+      return { key, value, shared: !!shared };
+    },
+    async delete(key, shared) {
+      const fullKey = (shared ? "smg-shared:" : "smg-local:") + key;
+      localStorage.removeItem(fullKey);
+      return { key, deleted: true, shared: !!shared };
+    },
+    async list(prefix, shared) {
+      const base = shared ? "smg-shared:" : "smg-local:";
+      const full = base + (prefix || "");
+      const keys = Object.keys(localStorage)
+        .filter((k) => k.startsWith(full))
+        .map((k) => k.slice(base.length));
+      return { keys, prefix, shared: !!shared };
+    },
+  };
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+// ── Config ──────────────────────────────────────────────────────
+const COLS = 5;
+const ROWS = 8;
+const CELL = 46; // px, square cell size
+const GAP = 6;
+
+const MEME_TYPES = [
+  { id: "smg",    name: "$SMG",    emoji: "🐊", c1: "#FFD23F", c2: "#FF7A00", special: true, unlockAt: 0 },
+  { id: "doge",   name: "$DOGE",   emoji: "🐕", c1: "#F7C948", c2: "#B8862B", unlockAt: 0 },
+  { id: "pepe",   name: "$PEPE",   emoji: "🐸", c1: "#6FE477", c2: "#2E8B3D", unlockAt: 0 },
+  { id: "wif",    name: "$WIF",    emoji: "🐶", c1: "#EDE1CC", c2: "#B79C6E", unlockAt: 0 },
+  { id: "bonk",   name: "$BONK",   emoji: "🦴", c1: "#FF9466", c2: "#C2481F", unlockAt: 60 },
+  { id: "popcat", name: "$POPCAT", emoji: "😼", c1: "#8FD9F7", c2: "#2E8DB8", unlockAt: 180 },
+  { id: "mew",    name: "$MEW",    emoji: "🐱", c1: "#F2A6D6", c2: "#C4579E", unlockAt: 350 },
+];
+
+// TODO: replace with your actual GitHub raw image URL once uploaded, e.g.
+// "https://raw.githubusercontent.com/Demon8565/Smugolot/main/assets/smugolot-icon-tile.png"
+const FIREBASE_DB_URL = "https://smugolot-leaderboard-default-rtdb.firebaseio.com";
+
+const SMG_LOGO_URL = "https://raw.githubusercontent.com/Demon8565/Smugolot/main/assets/smugolot-icon-tile.png";
+const SMG_LOGO_ROUNDED_URL = "https://raw.githubusercontent.com/Demon8565/Smugolot/main/assets/smugolot-logo-rounded.png";
+
+function TileFace({ type, size = 22 }) {
+  if (type.id === "smg") {
+    return (
+      <>
+        <img
+          src={SMG_LOGO_URL}
+          alt="$SMG"
+          style={{ width: size * 1.35, height: size * 1.35, objectFit: "contain", filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.5))" }}
+          onError={(e) => { e.target.style.display = "none"; e.target.nextSibling.style.display = "inline"; }}
+        />
+        <span style={{ fontSize: size, display: "none" }}>{type.emoji}</span>
+      </>
+    );
+  }
+  return <span style={{ fontSize: size }}>{type.emoji}</span>;
+}
+
+function activePool(score) {
+  return MEME_TYPES.filter((m) => score >= m.unlockAt);
+}
+function randomType(score) {
+  const pool = activePool(score);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+function makeEmptyBoard() {
+  return Array.from({ length: COLS }, () => []);
+}
+let uid = 1;
+function nextId() { return uid++; }
+
+// ── Holder tiers & wallet config ───────────────────────────────
+const SMG_MINT = "5n8hDgzjeAJdeFoAoQWNRAGkxedG2Mbtj7rqxjhhqg1M";
+const SOLANA_RPC = "https://api.mainnet-beta.solana.com";
+const BUY_URL = `https://raydium.io/swap/?inputCurrency=sol&outputCurrency=${SMG_MINT}`;
+
+const TIERS = [
+  { name: "Bronze", emoji: "🥉", minUsd: 0 },
+  { name: "Silver", emoji: "🥈", minUsd: 10 },
+  { name: "Gold", emoji: "🥇", minUsd: 50 },
+  { name: "Legendary", emoji: "👑", minUsd: 250 },
+];
+
+const LOCKED_REWARDS = [
+  { tier: 1, label: "Bonus daily Smug Points" },
+  { tier: 1, label: '"Tidepool" skin' },
+  { tier: 2, label: "2x weekend point multiplier" },
+  { tier: 2, label: "Holder-only tournaments" },
+  { tier: 3, label: '"Deep Smuglantis" legendary skin' },
+  { tier: 3, label: "Legendary leaderboard flair" },
+];
+
+function tierForUsd(usd) {
+  let idx = 0;
+  for (let i = 0; i < TIERS.length; i++) {
+    if (usd >= TIERS[i].minUsd) idx = i;
+  }
+  return idx;
+}
+function levelForPoints(points) {
+  let level = 1;
+  let cumulative = 0;
+  let threshold = 15000; // points needed to go from Level 1 to Level 2 ("Bronze" milestone)
+  while (points >= cumulative + threshold) {
+    cumulative += threshold;
+    level += 1;
+    threshold = Math.round(threshold * 1.35); // each further level demands progressively more
+  }
+  return level;
+}
+function pointsToNextLevel(points) {
+  let cumulative = 0;
+  let threshold = 15000;
+  while (points >= cumulative + threshold) {
+    cumulative += threshold;
+    threshold = Math.round(threshold * 1.35);
+  }
+  return cumulative + threshold - points;
+}
+
+function SmugolotCrush() {
+  const [board, setBoard] = useState(makeEmptyBoard);
+  const [score, setScore] = useState(0);
+  const [best, setBest] = useState(0);
+  const [fallingPiece, setFallingPiece] = useState(null); // {uid, type fields, col, rowFromTop}
+  const [next, setNext] = useState(null);
+  const [popping, setPopping] = useState([]); // ids currently mid-pop animation
+  const [gameOver, setGameOver] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [shakeCol, setShakeCol] = useState(null);
+  const [combo, setCombo] = useState(0);
+  const [floatingScores, setFloatingScores] = useState([]); // {id, text, col, row, gold}
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [showBoard, setShowBoard] = useState(false);
+  const [playerName, setPlayerName] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const boardBusy = useRef(false);
+  const boardRef = useRef(board);
+  const scoreRef = useRef(score);
+  useEffect(() => { boardRef.current = board; }, [board]);
+  useEffect(() => { scoreRef.current = score; }, [score]);
+
+  // ── Wallet / holder-tier state ──
+  const [walletInput, setWalletInput] = useState("");
+  const [walletAddress, setWalletAddress] = useState(null);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState("");
+  const [tokenBalance, setTokenBalance] = useState(0);
+  const [usdValue, setUsdValue] = useState(0);
+  const [priceUsd, setPriceUsd] = useState(0);
+
+  // ── Lifetime Smug Points / level ──
+  const [lifetimePoints, setLifetimePoints] = useState(0);
+
+  const tierIdx = tierForUsd(usdValue);
+  const tier = TIERS[tierIdx];
+  const nextTier = TIERS[tierIdx + 1] || null;
+  const level = levelForPoints(lifetimePoints);
+
+  // ── Load saved wallet + lifetime points on mount ──
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await window.storage.get("smg-crush-wallet", false);
+        if (r?.value) {
+          setWalletInput(r.value);
+          connectWallet(r.value, true);
+        }
+      } catch (e) { /* no saved wallet yet */ }
+      try {
+        const r2 = await window.storage.get("smg-crush-lifetime-points", false);
+        if (r2?.value) setLifetimePoints(parseInt(r2.value, 10) || 0);
+      } catch (e) { /* no lifetime points saved yet */ }
+    })();
+  }, []);
+
+  const fetchPriceUsd = async () => {
+    try {
+      const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${SMG_MINT}`);
+      const data = await res.json();
+      const pair = data?.pairs?.[0];
+      const p = pair ? parseFloat(pair.priceUsd) : 0;
+      setPriceUsd(p || 0);
+      return p || 0;
+    } catch (e) {
+      return 0;
+    }
+  };
+
+  const fetchTokenBalance = async (address) => {
+    const res = await fetch(SOLANA_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getTokenAccountsByOwner",
+        params: [address, { mint: SMG_MINT }, { encoding: "jsonParsed" }],
+      }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || "RPC error");
+    const accounts = data?.result?.value || [];
+    let total = 0;
+    accounts.forEach((acc) => {
+      const amt = acc?.account?.data?.parsed?.info?.tokenAmount?.uiAmount;
+      if (typeof amt === "number") total += amt;
+    });
+    return total;
+  };
+
+  const connectWallet = async (addressArg, silent) => {
+    const address = (addressArg || walletInput || "").trim();
+    if (!address) { setWalletError("Paste a Solana wallet address first."); return; }
+    setWalletLoading(true);
+    setWalletError("");
+    try {
+      const [balance, price] = await Promise.all([fetchTokenBalance(address), fetchPriceUsd()]);
+      setTokenBalance(balance);
+      setUsdValue(balance * price);
+      setWalletAddress(address);
+      await window.storage.set("smg-crush-wallet", address, false);
+    } catch (e) {
+      if (!silent) setWalletError("Couldn't read that wallet. Double-check the address and try again.");
+      setWalletAddress(null);
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  const disconnectWallet = () => {
+    setWalletAddress(null);
+    setTokenBalance(0);
+    setUsdValue(0);
+    setWalletInput("");
+  };
+
+  // ── Load personal name + leaderboard on mount ──
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await window.storage.get("smg-crush-player-name", false);
+        if (r?.value) setPlayerName(r.value);
+      } catch (e) { /* no saved name yet */ }
+      await refreshLeaderboard();
+    })();
+  }, []);
+
+  const refreshLeaderboard = async () => {
+    try {
+      const res = await fetch(`${FIREBASE_DB_URL}/scores.json`);
+      const data = await res.json();
+      const list = data ? Object.values(data) : [];
+      list.sort((a, b) => b.score - a.score);
+      setLeaderboard(list.slice(0, 10));
+    } catch (e) {
+      setLeaderboard([]);
+    }
+  };
+
+  // ── Start / reset ──
+  const startGame = () => {
+    setBoard(makeEmptyBoard());
+    setScore(0);
+    setCombo(0);
+    setGameOver(false);
+    setSubmitted(false);
+    setPopping([]);
+    const c = randomType(0);
+    const n = randomType(0);
+    setFallingPiece({ ...c, uid: nextId(), col: Math.floor(COLS / 2), rowFromTop: 0 });
+    setNext({ ...n, uid: nextId() });
+    setStarted(true);
+    boardBusy.current = false;
+  };
+
+  useEffect(() => {
+    if (score > best) setBest(score);
+  }, [score]); // eslint-disable-line
+
+  // ── Continuous fall loop: the piece keeps descending on its own ──
+  useEffect(() => {
+    if (!started || gameOver) return;
+    let timeoutId;
+    const tick = () => {
+      if (boardBusy.current) {
+        timeoutId = setTimeout(tick, 100);
+        return;
+      }
+      setFallingPiece((fp) => {
+        if (!fp) return fp;
+        const colStack = boardRef.current[fp.col] || [];
+        const landingRow = ROWS - 1 - colStack.length;
+        if (fp.rowFromTop >= landingRow) {
+          queueMicrotask(() => settleFallingPiece(fp));
+          return fp;
+        }
+        return { ...fp, rowFromTop: fp.rowFromTop + 1 };
+      });
+      const speed = Math.max(220, 520 - Math.floor(scoreRef.current / 60) * 15);
+      timeoutId = setTimeout(tick, speed);
+    };
+    timeoutId = setTimeout(tick, 520);
+    return () => clearTimeout(timeoutId);
+  }, [started, gameOver, fallingPiece?.uid]);
+
+  // ── Tap a column to steer the currently falling piece into it ──
+  const handleColumnTap = (colIndex) => {
+    if (!started || gameOver || !fallingPiece) return;
+    const colStack = boardRef.current[colIndex] || [];
+    if (colStack.length >= ROWS) {
+      setShakeCol(colIndex);
+      setTimeout(() => setShakeCol(null), 350);
+      return;
+    }
+    const landingRow = ROWS - 1 - colStack.length;
+    setFallingPiece((fp) => (fp ? { ...fp, col: colIndex, rowFromTop: Math.min(fp.rowFromTop, landingRow) } : fp));
+  };
+
+  const settleFallingPiece = (fp) => {
+    if (boardBusy.current) return;
+    boardBusy.current = true;
+    const colIndex = fp.col;
+
+    setBoard((prevBoard) => {
+      const newBoard = prevBoard.map((c) => c.slice());
+      newBoard[colIndex] = [...newBoard[colIndex], { ...fp, cellUid: nextId() }];
+      return newBoard;
+    });
+
+    // spawn the next falling piece right away so the action stays continuous
+    const upcoming = next;
+    const freshNext = randomType(scoreRef.current);
+    setFallingPiece({ ...upcoming, uid: nextId(), col: Math.floor(COLS / 2), rowFromTop: 0 });
+    setNext({ ...freshNext, uid: nextId() });
+
+    setTimeout(() => {
+      checkMatchAndResolve(colIndex);
+    }, 40);
+  };
+
+  const checkMatchAndResolve = (colIndex, targetRow) => {
+    setBoard((prevBoard) => {
+      const col = prevBoard[colIndex];
+      if (!col || col.length === 0) { boardBusy.current = false; return prevBoard; }
+
+      // Count consecutive same-type run from the top of this column
+      const topType = col[col.length - 1].id;
+      let runLen = 0;
+      for (let i = col.length - 1; i >= 0; i--) {
+        if (col[i].id === topType) runLen++; else break;
+      }
+
+      if (runLen >= 3) {
+        const clearedCells = col.slice(col.length - runLen);
+        const clearedIds = clearedCells.map((c) => c.cellUid);
+        setPopping(clearedIds);
+
+        const isSpecial = topType === "smg";
+        let pts = runLen * 22 + Math.max(0, runLen - 3) * 12;
+        if (isSpecial) pts *= 2;
+        setCombo((c) => c + 1);
+
+        const fid = nextId();
+        setFloatingScores((f) => [
+          ...f,
+          { id: fid, text: `+${pts}${isSpecial ? " 🐊x2" : ""}`, col: colIndex, row: col.length - 1, gold: isSpecial },
+        ]);
+        setTimeout(() => {
+          setFloatingScores((f) => f.filter((s) => s.id !== fid));
+        }, 900);
+
+        setTimeout(() => {
+          setScore((s) => s + pts);
+          setBoard((b2) => {
+            const trimmed = b2.map((c, ci) => (ci === colIndex ? c.slice(0, c.length - runLen) : c));
+            return trimmed;
+          });
+          setPopping([]);
+          // check for a new game-over-safe state, then release lock
+          setTimeout(() => {
+            boardBusy.current = false;
+          }, 60);
+        }, 380);
+      } else {
+        setCombo(0);
+        // game over check: did this column reach the very top?
+        if (col.length >= ROWS) {
+          setGameOver(true);
+          setLifetimePoints((lp) => {
+            const updated = lp + score;
+            window.storage.set("smg-crush-lifetime-points", String(updated), false).catch(() => {});
+            return updated;
+          });
+        }
+        boardBusy.current = false;
+      }
+      return prevBoard;
+    });
+  };
+
+  const submitScore = async () => {
+    const name = (playerName || "Anon Axolotl").trim().slice(0, 20);
+    try {
+      await window.storage.set("smg-crush-player-name", name, false);
+      await fetch(`${FIREBASE_DB_URL}/scores.json`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, score, ts: Date.now() }),
+      });
+      await refreshLeaderboard();
+      setSubmitted(true);
+    } catch (e) {
+      setSubmitted(true);
+    }
+  };
+
+  const pool = activePool(score);
+
+  return (
+    <div style={styles.page}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700;800&display=swap');
+        * { box-sizing: border-box; }
+        .smg-bubble {
+          position: absolute;
+          bottom: -40px;
+          border-radius: 50%;
+          background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.35), rgba(153,69,255,0.06));
+          animation: smgRise linear infinite;
+          pointer-events: none;
+        }
+        @keyframes smgRise {
+          0% { transform: translateY(0) translateX(0); opacity: 0; }
+          10% { opacity: 0.6; }
+          90% { opacity: 0.4; }
+          100% { transform: translateY(-620px) translateX(10px); opacity: 0; }
+        }
+        @keyframes smgPop {
+          0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+          40% { transform: scale(1.35); opacity: 1; filter: brightness(1.8); }
+          100% { transform: scale(0.2); opacity: 0; filter: brightness(2.4); }
+        }
+        @keyframes smgFloatUp {
+          0% { transform: translateY(0); opacity: 0; }
+          15% { opacity: 1; }
+          100% { transform: translateY(-46px); opacity: 0; }
+        }
+        @keyframes smgShake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-6px); }
+          75% { transform: translateX(6px); }
+        }
+        @keyframes smgPulseGlow {
+          0%, 100% { box-shadow: 0 0 12px 2px rgba(255,210,63,0.35); }
+          50% { box-shadow: 0 0 22px 6px rgba(255,210,63,0.6); }
+        }
+        .smg-tile-special { animation: smgPulseGlow 1.6s ease-in-out infinite; }
+        .smg-btn { transition: transform .12s ease, box-shadow .12s ease; }
+        .smg-btn:active { transform: scale(0.96); }
+      `}</style>
+
+      {/* ambient bubbles */}
+      <div style={styles.bubbleField}>
+        {Array.from({ length: 14 }).map((_, i) => (
+          <span
+            key={i}
+            className="smg-bubble"
+            style={{
+              left: `${(i * 37) % 100}%`,
+              width: 6 + (i % 5) * 4,
+              height: 6 + (i % 5) * 4,
+              animationDuration: `${9 + (i % 6) * 2}s`,
+              animationDelay: `${(i % 7) * 1.3}s`,
+            }}
+          />
+        ))}
+      </div>
+
+      <div style={styles.header}>
+        <div style={styles.title}>SMUGOLOT CRUSH</div>
+        <div style={styles.subtitle}>Stack 3 of a kind vertically to pop them · Too Rare To Care 🐊</div>
+      </div>
+
+      {!started && (
+        <div style={styles.startCard}>
+          <img
+            src={SMG_LOGO_ROUNDED_URL}
+            alt="$SMG"
+            style={styles.startLogo}
+            onError={(e) => { e.target.style.display = "none"; e.target.nextSibling.style.display = "block"; }}
+          />
+          <div style={{ ...styles.startEmoji, display: "none" }}>🐊🫧</div>
+          <div style={styles.startText}>
+            The memecoin falls on its own — tap a column to steer it there before it lands. Line up 3+ of the <b>same coin</b> stacked in a column and they pop for points.
+            Let a column fill to the top and it's game over.
+          </div>
+
+          <div style={styles.walletBox}>
+            {!walletAddress ? (
+              <>
+                <div style={styles.walletLabel}>Connect wallet for holder perks (optional)</div>
+                <input
+                  style={styles.input}
+                  placeholder="Paste your Solana wallet address"
+                  value={walletInput}
+                  onChange={(e) => setWalletInput(e.target.value)}
+                />
+                <button className="smg-btn" style={styles.secondaryBtn} onClick={() => connectWallet()} disabled={walletLoading}>
+                  {walletLoading ? "Checking..." : "🔗 Check My $SMG Holdings"}
+                </button>
+                {walletError && <div style={styles.errorText}>{walletError}</div>}
+              </>
+            ) : (
+              <div style={styles.tierRow}>
+                <span style={{ fontSize: 20 }}>{tier.emoji}</span>
+                <div style={{ textAlign: "left", flex: 1 }}>
+                  <div style={styles.tierName}>{tier.name} Holder</div>
+                  <div style={styles.tierSub}>
+                    {tokenBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })} $SMG · ${usdValue.toFixed(2)}
+                  </div>
+                </div>
+                <button className="smg-btn" style={styles.tierChangeBtn} onClick={disconnectWallet}>Change</button>
+              </div>
+            )}
+          </div>
+
+          <button className="smg-btn" style={styles.primaryBtn} onClick={startGame}>▶ Play Smugolot Crush</button>
+          <button className="smg-btn" style={styles.secondaryBtn} onClick={() => setShowBoard(true)}>🏆 View Leaderboard</button>
+        </div>
+      )}
+
+      {started && (
+        <>
+          <div style={styles.statusRow}>
+            <span style={styles.statusChip}>Lvl {level}</span>
+            {walletAddress && <span style={styles.statusChip}>{tier.emoji} {tier.name}</span>}
+          </div>
+          <div style={styles.hud}>
+            <div style={styles.hudBox}>
+              <div style={styles.hudLabel}>SCORE</div>
+              <div style={styles.hudValue}>{score}</div>
+            </div>
+            <div style={styles.nextBox}>
+              <div style={styles.hudLabel}>NEXT</div>
+              {next && (
+                <div style={{ ...styles.nextTile, background: `linear-gradient(155deg, ${next.c1}, ${next.c2})` }}>
+                  <span style={{ fontSize: 20 }}><TileFace type={next} size={20} /></span>
+                </div>
+              )}
+            </div>
+            <div style={styles.hudBox}>
+              <div style={styles.hudLabel}>BEST</div>
+              <div style={styles.hudValue}>{best}</div>
+            </div>
+          </div>
+
+          <div style={{ ...styles.boardWrap, width: COLS * (CELL + GAP) + GAP }}>
+            <div style={styles.board}>
+              {fallingPiece && (
+                <div
+                  style={{
+                    ...styles.tile,
+                    position: "absolute",
+                    left: GAP + fallingPiece.col * (CELL + GAP),
+                    top: GAP + fallingPiece.rowFromTop * (CELL + GAP),
+                    background: `linear-gradient(155deg, ${fallingPiece.c1}, ${fallingPiece.c2})`,
+                    transition: "top 0.16s linear, left 0.14s ease",
+                    zIndex: 5,
+                  }}
+                  className={fallingPiece.id === "smg" ? "smg-tile-special" : ""}
+                >
+                  <TileFace type={fallingPiece} size={22} />
+                </div>
+              )}
+
+              {Array.from({ length: COLS }).map((_, colIdx) => (
+                <button
+                  key={colIdx}
+                  onClick={() => handleColumnTap(colIdx)}
+                  style={{
+                    ...styles.column,
+                    animation: shakeCol === colIdx ? "smgShake .35s" : "none",
+                  }}
+                  aria-label={`Drop into column ${colIdx + 1}`}
+                >
+                  {board[colIdx].map((cell, rowIdx) => {
+                    const isPopping = popping.includes(cell.cellUid);
+                    return (
+                      <div
+                        key={cell.cellUid}
+                        style={{
+                          ...styles.tile,
+                          position: "absolute",
+                          bottom: GAP + rowIdx * (CELL + GAP),
+                          background: `linear-gradient(155deg, ${cell.c1}, ${cell.c2})`,
+                          animation: isPopping ? "smgPop .38s ease forwards" : "none",
+                        }}
+                        className={cell.id === "smg" && !isPopping ? "smg-tile-special" : ""}
+                      >
+                        <TileFace type={cell} size={22} />
+                      </div>
+                    );
+                  })}
+                  {floatingScores.filter((f) => f.col === colIdx).map((f) => (
+                    <div
+                      key={f.id}
+                      style={{
+                        position: "absolute",
+                        bottom: GAP + f.row * (CELL + GAP) + CELL / 2,
+                        left: 0, right: 0, textAlign: "center",
+                        fontFamily: "'Baloo 2', sans-serif",
+                        fontWeight: 800,
+                        fontSize: 15,
+                        color: f.gold ? "#FFD23F" : "#14F195",
+                        textShadow: "0 2px 6px rgba(0,0,0,0.6)",
+                        animation: "smgFloatUp .9s ease forwards",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      {f.text}
+                    </div>
+                  ))}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={styles.poolRow}>
+            {pool.map((m) => (
+              <div key={m.id} style={{ ...styles.poolChip, background: `linear-gradient(155deg, ${m.c1}, ${m.c2})` }}>
+                <TileFace type={m} size={13} />
+              </div>
+            ))}
+          </div>
+
+          <button className="smg-btn" style={styles.leaderboardToggle} onClick={() => setShowBoard(true)}>🏆 Leaderboard</button>
+        </>
+      )}
+
+      {/* GAME OVER OVERLAY */}
+      {gameOver && (
+        <div style={styles.overlay}>
+          <div style={styles.overlayCard}>
+            <div style={{ fontSize: 40 }}>💥🐊</div>
+            <div style={styles.overlayTitle}>Game Over</div>
+            <div style={styles.overlayScore}>{score} pts</div>
+            {score >= best && score > 0 && <div style={styles.newBest}>🎉 New personal best!</div>}
+
+            <div style={styles.statusLine}>Level {level} · {tier.emoji} {walletAddress ? `${tier.name} Holder` : "Not Connected"}</div>
+            <div style={styles.mutedText}>{pointsToNextLevel(lifetimePoints).toLocaleString()} Smug Points to Level {level + 1}</div>
+
+            {walletAddress && nextTier && (
+              <div style={styles.tierProgressBox}>
+                <div style={styles.mutedText}>
+                  You're <b style={{ color: "#FFD23F" }}>${Math.max(0, (nextTier.minUsd - usdValue)).toFixed(2)}</b> of $SMG away from {nextTier.emoji} {nextTier.name}
+                </div>
+              </div>
+            )}
+
+            <div style={styles.lockedBox}>
+              <div style={styles.lockedTitle}>🔒 Unlock by holding $SMG</div>
+              {LOCKED_REWARDS.filter((r) => r.tier > tierIdx).slice(0, 3).map((r, i) => (
+                <div key={i} style={styles.lockedItem}>• {r.label} <span style={styles.lockedTag}>{TIERS[r.tier].name}</span></div>
+              ))}
+            </div>
+
+            <a href={BUY_URL} target="_blank" rel="noopener noreferrer" className="smg-btn" style={styles.buyBtn}>💳 Buy $SMG</a>
+
+            {!submitted ? (
+              <>
+                <input
+                  style={styles.input}
+                  placeholder="Your name / X handle"
+                  value={playerName}
+                  maxLength={20}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                />
+                <button className="smg-btn" style={styles.primaryBtn} onClick={submitScore}>Submit to Leaderboard</button>
+              </>
+            ) : (
+              <div style={styles.submittedNote}>Score saved to the community leaderboard ✅</div>
+            )}
+
+            <button className="smg-btn" style={styles.secondaryBtn} onClick={startGame}>🔁 Play Again</button>
+            <button className="smg-btn" style={styles.textBtn} onClick={() => setShowBoard(true)}>View Leaderboard</button>
+          </div>
+        </div>
+      )}
+
+      {/* LEADERBOARD MODAL */}
+      {showBoard && (
+        <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) setShowBoard(false); }}>
+          <div style={styles.overlayCard}>
+            <div style={styles.overlayTitle}>🏆 Top Axolotls</div>
+            {leaderboard.length === 0 && <div style={styles.mutedText}>No scores yet — be the first!</div>}
+            <div style={styles.lbList}>
+              {leaderboard.slice(0, 10).map((row, i) => (
+                <div key={i} style={styles.lbRow}>
+                  <span style={styles.lbRank}>{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}</span>
+                  <span style={styles.lbName}>{row.name}</span>
+                  <span style={styles.lbScore}>{row.score}</span>
+                </div>
+              ))}
+            </div>
+            <button className="smg-btn" style={styles.secondaryBtn} onClick={() => { refreshLeaderboard(); }}>↻ Refresh</button>
+            <button className="smg-btn" style={styles.primaryBtn} onClick={() => setShowBoard(false)}>Close</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background: "radial-gradient(ellipse at 50% -10%, #1a0a33 0%, #06010f 55%, #04000a 100%)",
+    color: "#F4EEFF",
+    fontFamily: "'Nunito', sans-serif",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "20px 14px 40px",
+    position: "relative",
+    overflow: "hidden",
+  },
+  bubbleField: {
+    position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none",
+  },
+  header: { textAlign: "center", marginBottom: 16, zIndex: 2 },
+  title: {
+    fontFamily: "'Baloo 2', sans-serif",
+    fontWeight: 800,
+    fontSize: 26,
+    letterSpacing: 0.5,
+    background: "linear-gradient(90deg, #14F195, #9945FF)",
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+  },
+  subtitle: { fontSize: 12.5, color: "#a996cf", marginTop: 4, maxWidth: 300 },
+  startCard: {
+    zIndex: 2, background: "rgba(21,7,38,0.9)", border: "1px solid rgba(153,69,255,0.3)",
+    borderRadius: 20, padding: "24px 20px", textAlign: "center", maxWidth: 320,
+    display: "flex", flexDirection: "column", gap: 12, alignItems: "center",
+  },
+  startEmoji: { fontSize: 36 },
+  startLogo: { width: 88, height: 88, borderRadius: 20, boxShadow: "0 6px 24px rgba(0,0,0,0.5)" },
+  startText: { fontSize: 13.5, color: "#cbb9e8", lineHeight: 1.55 },
+  primaryBtn: {
+    width: "100%", padding: "12px 18px", borderRadius: 14, border: "none",
+    background: "linear-gradient(135deg, #14F195, #0FBF77)", color: "#06100a",
+    fontFamily: "'Baloo 2', sans-serif", fontWeight: 700, fontSize: 15, cursor: "pointer",
+    boxShadow: "0 6px 20px rgba(20,241,149,0.3)",
+  },
+  secondaryBtn: {
+    width: "100%", padding: "11px 18px", borderRadius: 14,
+    border: "1px solid rgba(153,69,255,0.4)", background: "rgba(153,69,255,0.12)",
+    color: "#F4EEFF", fontFamily: "'Baloo 2', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
+  },
+  textBtn: {
+    background: "none", border: "none", color: "#8FD9F7", fontSize: 13, fontWeight: 700,
+    cursor: "pointer", marginTop: 2, fontFamily: "'Nunito', sans-serif",
+  },
+  hud: {
+    zIndex: 2, display: "flex", gap: 10, marginBottom: 14, alignItems: "stretch",
+  },
+  hudBox: {
+    background: "rgba(21,7,38,0.85)", border: "1px solid rgba(153,69,255,0.25)",
+    borderRadius: 12, padding: "6px 16px", textAlign: "center", minWidth: 70,
+  },
+  hudLabel: { fontSize: 9.5, letterSpacing: 1, color: "#9683b8", fontWeight: 700 },
+  hudValue: { fontFamily: "'Baloo 2', sans-serif", fontSize: 19, fontWeight: 800, color: "#14F195" },
+  nextBox: {
+    background: "rgba(21,7,38,0.85)", border: "1px solid rgba(255,210,63,0.35)",
+    borderRadius: 12, padding: "6px 12px", textAlign: "center", display: "flex",
+    flexDirection: "column", alignItems: "center", gap: 4,
+  },
+  nextTile: {
+    width: 30, height: 30, borderRadius: 8, display: "flex", alignItems: "center",
+    justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+  },
+  boardWrap: { position: "relative", zIndex: 2 },
+  board: {
+    position: "relative",
+    display: "flex", gap: GAP, background: "rgba(10,3,22,0.75)",
+    border: "1px solid rgba(153,69,255,0.3)", borderRadius: 16, padding: GAP,
+    boxShadow: "inset 0 2px 20px rgba(0,0,0,0.5)",
+  },
+  column: {
+    position: "relative", width: CELL, height: ROWS * (CELL + GAP) + GAP,
+    background: "rgba(153,69,255,0.05)", border: "none", borderRadius: 10,
+    cursor: "pointer", padding: 0, overflow: "visible",
+  },
+  tile: {
+    width: CELL, height: CELL, borderRadius: 10, display: "flex", alignItems: "center",
+    justifyContent: "center", fontSize: 22, boxShadow: "0 3px 10px rgba(0,0,0,0.4)",
+    border: "1px solid rgba(255,255,255,0.15)",
+  },
+  poolRow: { zIndex: 2, display: "flex", gap: 6, marginTop: 14, flexWrap: "wrap", justifyContent: "center", maxWidth: 320 },
+  poolChip: {
+    width: 26, height: 26, borderRadius: 7, display: "flex", alignItems: "center",
+    justifyContent: "center", fontSize: 13, opacity: 0.85,
+  },
+  leaderboardToggle: {
+    zIndex: 2, marginTop: 18, padding: "9px 20px", borderRadius: 20,
+    border: "1px solid rgba(255,210,63,0.4)", background: "rgba(255,210,63,0.1)",
+    color: "#FFD23F", fontFamily: "'Baloo 2', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer",
+  },
+  overlay: {
+    position: "fixed", inset: 0, background: "rgba(4,0,10,0.85)", backdropFilter: "blur(3px)",
+    display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16,
+  },
+  overlayCard: {
+    background: "linear-gradient(180deg, #1a0a33, #0d0420)", border: "1px solid rgba(153,69,255,0.4)",
+    borderRadius: 22, padding: "26px 22px", width: "100%", maxWidth: 320, textAlign: "center",
+    display: "flex", flexDirection: "column", gap: 10, alignItems: "center",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
+  },
+  overlayTitle: { fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 20, marginTop: 2 },
+  overlayScore: { fontFamily: "'Baloo 2', sans-serif", fontSize: 30, fontWeight: 800, color: "#14F195" },
+  newBest: { fontSize: 12.5, color: "#FFD23F", fontWeight: 700 },
+  input: {
+    width: "100%", padding: "11px 14px", borderRadius: 12, border: "1px solid rgba(153,69,255,0.4)",
+    background: "rgba(255,255,255,0.06)", color: "#F4EEFF", fontSize: 14, outline: "none",
+    fontFamily: "'Nunito', sans-serif",
+  },
+  submittedNote: { fontSize: 13, color: "#14F195", fontWeight: 700 },
+  mutedText: { fontSize: 13, color: "#9683b8", padding: "10px 0" },
+  lbList: { width: "100%", display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" },
+  lbRow: {
+    display: "flex", alignItems: "center", gap: 10, background: "rgba(153,69,255,0.08)",
+    border: "1px solid rgba(153,69,255,0.15)", borderRadius: 10, padding: "8px 12px",
+  },
+  lbRank: { fontSize: 14, width: 28, fontWeight: 800 },
+  lbName: { flex: 1, textAlign: "left", fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  lbScore: { fontSize: 14, fontWeight: 800, color: "#14F195", fontFamily: "'Baloo 2', sans-serif" },
+
+  // ── wallet / tier / unlocks ──
+  walletBox: { width: "100%", display: "flex", flexDirection: "column", gap: 8 },
+  walletLabel: { fontSize: 11.5, color: "#9683b8", fontWeight: 700, textAlign: "left" },
+  errorText: { fontSize: 12, color: "#FF8A8A", textAlign: "left" },
+  tierRow: {
+    display: "flex", alignItems: "center", gap: 10, background: "rgba(255,210,63,0.08)",
+    border: "1px solid rgba(255,210,63,0.3)", borderRadius: 12, padding: "10px 12px",
+  },
+  tierName: { fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 14, color: "#FFD23F" },
+  tierSub: { fontSize: 11.5, color: "#cbb9e8" },
+  tierChangeBtn: {
+    border: "none", background: "rgba(255,255,255,0.08)", color: "#cbb9e8",
+    fontSize: 11, fontWeight: 700, borderRadius: 8, padding: "6px 10px", cursor: "pointer",
+  },
+  statusRow: { zIndex: 2, display: "flex", gap: 8, marginBottom: 10 },
+  statusChip: {
+    fontSize: 11.5, fontWeight: 800, fontFamily: "'Baloo 2', sans-serif",
+    background: "rgba(153,69,255,0.15)", border: "1px solid rgba(153,69,255,0.3)",
+    borderRadius: 20, padding: "4px 12px", color: "#e3d6ff",
+  },
+  statusLine: { fontSize: 13, fontWeight: 700, color: "#cbb9e8" },
+  tierProgressBox: { width: "100%" },
+  lockedBox: {
+    width: "100%", background: "rgba(153,69,255,0.08)", border: "1px solid rgba(153,69,255,0.2)",
+    borderRadius: 12, padding: "10px 12px", textAlign: "left",
+  },
+  lockedTitle: { fontSize: 12, fontWeight: 800, color: "#e3d6ff", marginBottom: 6 },
+  lockedItem: { fontSize: 12, color: "#a996cf", marginBottom: 4 },
+  lockedTag: {
+    fontSize: 9.5, fontWeight: 800, color: "#FFD23F", background: "rgba(255,210,63,0.12)",
+    borderRadius: 6, padding: "1px 6px", marginLeft: 4,
+  },
+  buyBtn: {
+    width: "100%", padding: "12px 18px", borderRadius: 14, border: "none",
+    background: "linear-gradient(135deg, #FFB800, #FF7A00)", color: "#241000",
+    fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 15, cursor: "pointer",
+    textDecoration: "none", display: "block", textAlign: "center",
+    boxShadow: "0 6px 20px rgba(255,150,0,0.35)",
+  },
+};
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<SmugolotCrush />);
+</script>
+</body>
+</html>
