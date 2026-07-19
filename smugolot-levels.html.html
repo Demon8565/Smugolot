@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smugolot — Levels of Smuglantis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --deep:#071824;
+    --deep2:#0d2635;
+    --card:#12324a;
+    --card-line:#1e4a66;
+    --aqua:#4fe0c9;
+    --aqua-dim:#2f8a7c;
+    --coral:#ff7a56;
+    --sand:#eaf3ee;
+    --sand-dim:#a9c4c0;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    background:var(--deep);
+    color:var(--sand);
+    font-family:'Work Sans', sans-serif;
+    overflow-x:hidden;
+  }
+  body{
+    background:
+      radial-gradient(ellipse at 20% -10%, #123a4f 0%, transparent 55%),
+      radial-gradient(ellipse at 80% 110%, #0a2a3a 0%, transparent 60%),
+      var(--deep);
+    min-height:100vh;
+  }
+
+  /* bubbles ambience */
+  .bubble{
+    position:fixed; bottom:-40px; border-radius:50%;
+    background:rgba(79,224,201,0.10);
+    border:1px solid rgba(79,224,201,0.18);
+    animation:rise linear infinite;
+    pointer-events:none;
+  }
+  @keyframes rise{
+    to{ transform:translateY(-115vh); opacity:0; }
+  }
+
+  header{
+    max-width:920px; margin:0 auto; padding:64px 24px 32px;
+    text-align:center;
+  }
+  .eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    letter-spacing:0.14em; text-transform:uppercase;
+    font-size:12px; color:var(--aqua); opacity:0.85;
+  }
+  h1{
+    font-family:'Baloo 2', sans-serif;
+    font-weight:800;
+    font-size:clamp(34px, 6vw, 58px);
+    line-height:1.05;
+    margin:14px 0 12px;
+    background:linear-gradient(180deg, #fff, var(--aqua) 140%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .tagline{
+    color:var(--sand-dim); font-size:16px; max-width:520px; margin:0 auto;
+  }
+
+  .rules-btn{
+    margin-top:28px;
+    font-family:'Baloo 2', sans-serif; font-weight:700; font-size:16px;
+    color:var(--deep); background:var(--coral);
+    border:none; padding:14px 28px; border-radius:999px;
+    cursor:pointer; box-shadow:0 8px 24px rgba(255,122,86,0.28);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .rules-btn:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(255,122,86,0.38); }
+  .rules-btn:focus-visible{ outline:3px solid var(--sand); outline-offset:3px; }
+  .btn-row{
+    display:flex; flex-wrap:wrap; gap:14px; justify-content:center;
+  }
+  .claim-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    background:transparent; color:var(--aqua);
+    border:2px solid var(--aqua); text-decoration:none;
+    box-shadow:none;
+  }
+  .claim-btn:hover{
+    background:rgba(79,224,201,0.10);
+    box-shadow:0 8px 24px rgba(79,224,201,0.18);
+  }
+
+  /* depth gauge */
+  .depth-section{
+    max-width:920px; margin:56px auto 0; padding:0 24px 80px;
+    display:grid; grid-template-columns:56px 1fr; gap:20px;
+  }
+  .gauge{
+    position:relative; border-radius:14px;
+    background:linear-gradient(180deg, #0f3346, #061722);
+    border:1px solid var(--card-line);
+  }
+  .gauge::before{
+    content:"";
+    position:absolute; left:50%; top:14px; bottom:14px; width:2px;
+    background:linear-gradient(180deg, var(--aqua), transparent);
+    opacity:0.5; transform:translateX(-50%);
+  }
+  .gauge-mark{
+    position:absolute; left:50%; transform:translate(-50%,-50%);
+    width:10px; height:10px; border-radius:50%;
+    background:var(--aqua); box-shadow:0 0 10px var(--aqua);
+  }
+
+  .tiers{ display:flex; flex-direction:column; gap:14px; }
+  .tier{
+    background:var(--card);
+    border:1px solid var(--card-line);
+    border-radius:16px;
+    padding:20px 22px;
+    display:grid; grid-template-columns:auto 1fr auto; gap:16px;
+    align-items:center;
+  }
+  .tier .depth-label{
+    font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--aqua-dim);
+    writing-mode:vertical-rl;
+  }
+  .tier-icon{
+    width:44px; height:44px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:20px;
+    background:radial-gradient(circle at 30% 30%, rgba(79,224,201,0.35), rgba(79,224,201,0.05));
+    border:1px solid var(--aqua-dim);
+  }
+  .tier-name{ font-family:'Baloo 2', sans-serif; font-weight:700; font-size:19px; }
+  .tier-req{ font-family:'JetBrains Mono', monospace; font-size:12.5px; color:var(--sand-dim); margin-top:2px; }
+  .tier-points{ text-align:right; font-family:'JetBrains Mono', monospace; }
+  .tier-points .num{ font-size:18px; color:var(--aqua); font-weight:600; }
+  .tier-points .lbl{ font-size:10.5px; color:var(--sand-dim); text-transform:uppercase; letter-spacing:.06em; }
+
+  footer{
+    text-align:center; padding:0 24px 60px; color:var(--sand-dim);
+    font-size:13px;
+  }
+  footer a{ color:var(--aqua); }
+
+  /* modal — sunken tablet */
+  .overlay{
+    position:fixed; inset:0; background:rgba(3,12,18,0.72);
+    display:none; align-items:flex-start; justify-content:center;
+    padding:6vh 16px; overflow-y:auto; z-index:50;
+    backdrop-filter:blur(3px);
+  }
+  .overlay.open{ display:flex; }
+  .tablet{
+    width:100%; max-width:640px;
+    background:linear-gradient(180deg, #103349, #081f2c);
+    border:1px solid var(--card-line);
+    border-radius:20px;
+    box-shadow:0 30px 80px rgba(0,0,0,0.55);
+    padding:32px 28px 28px;
+    position:relative;
+    animation:surface .35s ease;
+  }
+  @keyframes surface{ from{ transform:translateY(24px); opacity:0;} to{ transform:translateY(0); opacity:1;} }
+
+  .tablet h2{
+    font-family:'Baloo 2', sans-serif; font-size:26px; font-weight:800; color:var(--sand);
+    margin-bottom:4px;
+  }
+  .tablet .sub{ font-family:'JetBrains Mono', monospace; font-size:11.5px; color:var(--aqua); letter-spacing:.08em; text-transform:uppercase; margin-bottom:22px; }
+  .close-btn{
+    position:absolute; top:20px; right:20px;
+    width:34px; height:34px; border-radius:50%;
+    background:rgba(255,255,255,0.06); border:1px solid var(--card-line);
+    color:var(--sand); font-size:16px; cursor:pointer;
+  }
+  .close-btn:hover{ background:rgba(255,255,255,0.12); }
+  .rule-block{ margin-bottom:22px; }
+  .rule-block h3{
+    font-family:'Baloo 2', sans-serif; font-size:15px; color:var(--aqua);
+    margin-bottom:10px;
+  }
+  .rule-block p, .rule-block li{
+    font-size:14px; line-height:1.65; color:var(--sand-dim);
+  }
+  .rule-block ul{ padding-left:18px; }
+  table.rules-table{
+    width:100%; border-collapse:collapse; font-size:13.5px;
+  }
+  table.rules-table th{
+    text-align:left; font-family:'JetBrains Mono', monospace;
+    font-size:11px; color:var(--aqua-dim); text-transform:uppercase;
+    padding:8px 6px; border-bottom:1px solid var(--card-line);
+  }
+  table.rules-table td{
+    padding:9px 6px; border-bottom:1px solid rgba(30,74,102,0.5);
+    color:var(--sand);
+  }
+  .note{
+    margin-top:6px; font-size:12.5px; color:var(--coral); font-style:italic;
+  }
+
+  /* live sections */
+  .live-section{
+    max-width:920px; margin:0 auto; padding:0 24px 80px;
+    display:grid; gap:20px;
+  }
+  @media(min-width:720px){
+    .live-section{ grid-template-columns:1fr 1fr; }
+  }
+  .live-card{
+    background:var(--card);
+    border:1px solid var(--card-line);
+    border-radius:16px;
+    padding:22px;
+  }
+  .live-card h3{
+    font-family:'Baloo 2', sans-serif; font-size:17px; color:var(--sand);
+    margin-bottom:4px;
+  }
+  .live-card .sub2{
+    font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--aqua-dim);
+    text-transform:uppercase; letter-spacing:.06em; margin-bottom:16px;
+  }
+  .lookup-row{ display:flex; gap:8px; margin-bottom:14px; }
+  .lookup-row input{
+    flex:1; min-width:0;
+    background:var(--deep2); border:1px solid var(--card-line); border-radius:10px;
+    padding:11px 12px; color:var(--sand); font-family:'JetBrains Mono', monospace; font-size:13px;
+  }
+  .lookup-row input::placeholder{ color:var(--sand-dim); opacity:.6; }
+  .lookup-row button{
+    font-family:'Baloo 2', sans-serif; font-weight:700; font-size:14px;
+    color:var(--deep); background:var(--aqua);
+    border:none; border-radius:10px; padding:0 18px; cursor:pointer;
+  }
+  .lookup-row button:disabled{ opacity:.5; }
+  .lookup-result{
+    background:var(--deep2); border:1px solid var(--card-line); border-radius:12px;
+    padding:14px; font-size:13.5px; color:var(--sand-dim); min-height:20px;
+  }
+  .lookup-result .big{
+    font-family:'Baloo 2', sans-serif; font-size:20px; color:var(--aqua); font-weight:700;
+  }
+  .lb-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:9px 0; border-bottom:1px solid rgba(30,74,102,0.5);
+    font-size:13.5px;
+  }
+  .lb-row:last-child{ border-bottom:none; }
+  .lb-rank{
+    font-family:'JetBrains Mono', monospace; color:var(--aqua-dim); width:26px;
+  }
+  .lb-wallet{ font-family:'JetBrains Mono', monospace; color:var(--sand); flex:1; }
+  .lb-stat{ font-family:'JetBrains Mono', monospace; color:var(--aqua); font-weight:600; }
+  .empty-note{ color:var(--sand-dim); font-size:13px; font-style:italic; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">$SMG · Too Rare To Care</div>
+  <h1>Levels of Smuglantis</h1>
+  <p class="tagline">A weekly community ladder. Hold, participate, and rise from Tadpole to Elder — every level earns Smug Points you can redeem.</p>
+  <div class="btn-row">
+    <button class="rules-btn" onclick="openRules()">📜 Read the Rules</button>
+    <a class="rules-btn claim-btn" href="https://form.jotform.com/261992220796062" target="_blank" rel="noopener">💎 Claim Smug Points</a>
+  </div>
+</header>
+
+<section class="depth-section">
+  <div class="gauge">
+    <div class="gauge-mark" style="top:14%"></div>
+    <div class="gauge-mark" style="top:40%"></div>
+    <div class="gauge-mark" style="top:66%"></div>
+    <div class="gauge-mark" style="top:90%"></div>
+  </div>
+  <div class="tiers">
+    <div class="tier"><div class="tier-icon">🥚</div><div><div class="tier-name">Level 1 · Tadpole</div><div class="tier-req">Starting level</div></div><div class="tier-points"><div class="num">0</div><div class="lbl">score</div></div></div>
+    <div class="tier"><div class="tier-icon">🐣</div><div><div class="tier-name">Level 2 · Tadpole</div><div class="tier-req">Level-up bonus +50</div></div><div class="tier-points"><div class="num">10,000</div><div class="lbl">score</div></div></div>
+    <div class="tier"><div class="tier-icon">🦎</div><div><div class="tier-name">Level 3 · Axolotl</div><div class="tier-req">Level-up bonus +75</div></div><div class="tier-points"><div class="num">25,000</div><div class="lbl">score</div></div></div>
+    <div class="tier"><div class="tier-icon">🦎</div><div><div class="tier-name">Level 4 · Axolotl</div><div class="tier-req">Level-up bonus +100</div></div><div class="tier-points"><div class="num">45,000</div><div class="lbl">score</div></div></div>
+    <div class="tier"><div class="tier-icon">🦎</div><div><div class="tier-name">Level 5 · Axolotl</div><div class="tier-req">Level-up bonus +125</div></div><div class="tier-points"><div class="num">70,000</div><div class="lbl">score</div></div></div>
+    <div class="tier"><div class="tier-icon">🌊</div><div><div class="tier-name">Level 6 · Smuglantean</div><div class="tier-req">Level-up bonus +150</div></div><div class="tier-points"><div class="num">100,000</div><div class="lbl">score</div></div></div>
+    <div class="tier"><div class="tier-icon">🌊</div><div><div class="tier-name">Level 7 · Smuglantean</div><div class="tier-req">Level-up bonus +175</div></div><div class="tier-points"><div class="num">140,000</div><div class="lbl">score</div></div></div>
+    <div class="tier"><div class="tier-icon">🌊</div><div><div class="tier-name">Level 8 · Smuglantean</div><div class="tier-req">Level-up bonus +200</div></div><div class="tier-points"><div class="num">190,000</div><div class="lbl">score</div></div></div>
+    <div class="tier"><div class="tier-icon">👑</div><div><div class="tier-name">Level 9 · Elder</div><div class="tier-req">Level-up bonus +250</div></div><div class="tier-points"><div class="num">250,000</div><div class="lbl">score</div></div></div>
+    <div class="tier"><div class="tier-icon">👑</div><div><div class="tier-name">Level 10 · Elder of Smuglantis</div><div class="tier-req">Max level · Level-up bonus +300</div></div><div class="tier-points"><div class="num">320,000</div><div class="lbl">score</div></div></div>
+  </div>
+</section>
+
+<section class="live-section">
+  <div class="live-card">
+    <h3>🔍 Check Your Level</h3>
+    <div class="sub2">Live from the community Sheet</div>
+    <div class="lookup-row">
+      <input type="text" id="walletInput" placeholder="Paste your Solana wallet address">
+      <button id="lookupBtn" onclick="lookupWallet()">Check</button>
+    </div>
+    <div class="lookup-result" id="lookupResult">Enter your wallet to see your real Level and Smug Points balance.</div>
+  </div>
+
+  <div class="live-card">
+    <h3>🏆 This Week's Leaderboard</h3>
+    <div class="sub2" id="leaderboardMeta">Loading…</div>
+    <div id="leaderboardList"><div class="empty-note">Fetching live standings…</div></div>
+  </div>
+</section>
+
+<footer>
+  Levels reset weekly · Monday 00:00 UTC · <a href="#" onclick="openRules(); return false;">Full rules & redemption store →</a> · <a href="https://form.jotform.com/261992220796062" target="_blank" rel="noopener">Claim your points →</a>
+</footer>
+
+<!-- RULES MODAL -->
+<div class="overlay" id="overlay" onclick="if(event.target===this) closeRules()">
+  <div class="tablet" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+    <button class="close-btn" onclick="closeRules()" aria-label="Close rules">✕</button>
+    <h2 id="rulesTitle">Smuglantis Levels — Rules</h2>
+    <div class="sub">How the weekly ladder & Smug Points work</div>
+
+    <div class="rule-block">
+      <h3>The Basics</h3>
+      <p>Every action you take — holding $SMG, referrals, socials — earns <strong>Score</strong>. Score adds up over time and pushes you up the Level ladder, from Level 1 to Level 10. Your Level never goes down. What resets each Monday is the <strong>weekly race</strong> for the top spot.</p>
+    </div>
+
+    <div class="rule-block">
+      <h3>The Level Ladder</h3>
+      <table class="rules-table">
+        <tr><th>Level</th><th>Score Needed</th><th>Level-Up Bonus</th></tr>
+        <tr><td>1 · Tadpole</td><td>0 (start)</td><td>—</td></tr>
+        <tr><td>2 · Tadpole</td><td>10,000</td><td>+50</td></tr>
+        <tr><td>3 · Axolotl</td><td>25,000</td><td>+75</td></tr>
+        <tr><td>4 · Axolotl</td><td>45,000</td><td>+100</td></tr>
+        <tr><td>5 · Axolotl</td><td>70,000</td><td>+125</td></tr>
+        <tr><td>6 · Smuglantean</td><td>100,000</td><td>+150</td></tr>
+        <tr><td>7 · Smuglantean</td><td>140,000</td><td>+175</td></tr>
+        <tr><td>8 · Smuglantean</td><td>190,000</td><td>+200</td></tr>
+        <tr><td>9 · Elder</td><td>250,000</td><td>+250</td></tr>
+        <tr><td>10 · Elder of Smuglantis</td><td>320,000</td><td>+300</td></tr>
+      </table>
+      <p class="note">Crossing a threshold pays the level-up bonus immediately, on top of whatever action triggered it.</p>
+    </div>
+
+    <div class="rule-block">
+      <h3>How You Earn Score</h3>
+      <table class="rules-table">
+        <tr><th>Action</th><th>Score</th></tr>
+        <tr><td>Referral (new verified wallet)</td><td>5</td></tr>
+        <tr><td>Referral retention bonus (holds 7+ days)</td><td>+5</td></tr>
+        <tr><td>Repost/quote official announcement</td><td>2</td></tr>
+        <tr><td>Original post mentioning $SMG</td><td>3</td></tr>
+        <tr><td>Telegram daily participation</td><td>1 (capped)</td></tr>
+        <tr><td>Attending an X Space</td><td>3</td></tr>
+        <tr><td>Holding 50,000+ $SMG (daily)</td><td>1/day</td></tr>
+        <tr><td>Holding 250,000+ $SMG (daily)</td><td>2/day</td></tr>
+        <tr><td>Holding 1,000,000+ $SMG (daily)</td><td>4/day</td></tr>
+        <tr><td>Holding 5,000,000+ $SMG (daily)</td><td>6/day</td></tr>
+      </table>
+      <p class="note">Max 10 referrals counted per person per week. Balance checked at randomized times daily.</p>
+    </div>
+
+    <div class="rule-block">
+      <h3>Weekly Reward — Top 2</h3>
+      <p>Every Monday, whoever climbed the <strong>highest Level that week</strong> takes 1st place, and the next-highest takes 2nd. Rewards are based on total Smug Points earned that week — your regular action points plus any level-up bonuses you hit along the way.</p>
+    </div>
+
+    <div class="rule-block">
+      <h3>Redeem Your Points</h3>
+      <ul>
+        <li><strong>Tadpole:</strong> Telegram badge, holders-only channel, community shoutouts</li>
+        <li><strong>Axolotl:</strong> + Early access to announcements, sticker/emoji pack, votes on community decisions</li>
+        <li><strong>Smuglantean:</strong> + Merch/NFT whitelist priority, roadmap input, community spotlight</li>
+        <li><strong>Elder:</strong> + 1:1 AMA access, custom mascot art, top staking APY once staking launches</li>
+      </ul>
+    </div>
+
+    <div class="rule-block">
+      <h3>Fair Play</h3>
+      <p>Smug Points are a loyalty currency, not $SMG and not a financial instrument. Fake wallets, wash referrals, and snapshot-timing abuse will be excluded from rewards. Hold $SMG to unlock community perks — that's it.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openRules(){
+    document.getElementById('overlay').classList.add('open');
+    document.body.style.overflow='hidden';
+  }
+  function closeRules(){
+    document.getElementById('overlay').classList.remove('open');
+    document.body.style.overflow='';
+  }
+  document.addEventListener('keydown', e=>{
+    if(e.key==='Escape') closeRules();
+  });
+
+  // ambient bubbles
+  const colors = ['10','14','18'];
+  for(let i=0;i<14;i++){
+    const b=document.createElement('div');
+    b.className='bubble';
+    const size = 6+Math.random()*22;
+    b.style.width=size+'px';
+    b.style.height=size+'px';
+    b.style.left=Math.random()*100+'vw';
+    b.style.animationDuration=(10+Math.random()*14)+'s';
+    b.style.animationDelay=(Math.random()*14)+'s';
+    document.body.appendChild(b);
+  }
+
+  // ---------- LIVE DATA ----------
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwnnJ7GylEZeEIfRtSnk-MgCRvwbql-rj6i-NIZKZguD-cYNHl8EZs-DOVshD55JDrtFQ/exec";
+
+  async function lookupWallet(){
+    const input = document.getElementById('walletInput');
+    const btn = document.getElementById('lookupBtn');
+    const result = document.getElementById('lookupResult');
+    const wallet = input.value.trim();
+    if(!wallet){
+      result.textContent = "Paste a wallet address first.";
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+    result.textContent = "Looking up your Level…";
+    try{
+      const res = await fetch(`${WEB_APP_URL}?action=lookup&wallet=${encodeURIComponent(wallet)}`);
+      const data = await res.json();
+      if(data && data.found){
+        result.innerHTML = `<span class="big">Level ${data.level} · ${data.rankName}</span><br>
+          Score: ${Number(data.score).toLocaleString()} · Smug Points balance: ${Number(data.smugPointsBalance).toLocaleString()}`;
+      } else {
+        result.textContent = "Wallet not registered yet — hold $SMG or submit an action to get started.";
+      }
+    } catch(e){
+      result.textContent = "Couldn't reach the tracker right now. Try again shortly.";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Check";
+    }
+  }
+
+  async function loadLeaderboard(){
+    const meta = document.getElementById('leaderboardMeta');
+    const list = document.getElementById('leaderboardList');
+    try{
+      const res = await fetch(`${WEB_APP_URL}?action=leaderboard`);
+      const data = await res.json();
+      const rows = (data && data.leaderboard) || [];
+      if(rows.length === 0){
+        meta.textContent = "No entries yet this week";
+        list.innerHTML = '<div class="empty-note">Be the first to climb the ladder this week!</div>';
+        return;
+      }
+      meta.textContent = `Week of ${rows[0].weekOf || ''}`;
+      list.innerHTML = rows.slice(0,10).map(r => `
+        <div class="lb-row">
+          <span class="lb-rank">#${r.rank}</span>
+          <span class="lb-wallet">${r.wallet}</span>
+          <span class="lb-stat">${r.levelsGainedThisWeek} lvl · ${Number(r.smugPointsThisWeek).toLocaleString()} pts</span>
+        </div>
+      `).join('');
+    } catch(e){
+      meta.textContent = "";
+      list.innerHTML = '<div class="empty-note">Couldn\'t load the leaderboard right now.</div>';
+    }
+  }
+
+  loadLeaderboard();
+</script>
+
+</body>
+</html>
